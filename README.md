@@ -2,6 +2,8 @@
 
 ![BONUS ENGINEERING HMI overview](tests/artifacts/overview.png)
 
+A clean, Apple-inspired interface with original BONUS branding: rounded surfaces, precise Inter typography, generous spacing and clear touch controls.
+
 ## Try it
 
 1. Click **Code → Download ZIP** on this branch.
