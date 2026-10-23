@@ -1,65 +1,326 @@
 'use strict';
-const state={page:'overview',mode:'Auto',running:false,phase:0,elapsed:0,count:0,lastCycle:0,recipe:'Standard',dwell:1,access:'Operator',fault:null,alarms:[],history:[],tab:'active',manual:{infeed:false,outfeed:false,press:false},part:0};
-const steps=['Ready for next part','Infeed transfer','Part located at S1','Press descending','Press dwell','Press returning','Outfeed transfer'];
-const durations=[.4,1.8,.5,.8,1,.8,1.8];
-const $=s=>document.querySelector(s);let toastTimer;
-function notify(msg){$('#toast')?.remove();const el=document.createElement('div');el.id='toast';el.textContent=msg;$('#panel').append(el);clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.remove(),2800)}
-function io(){return {s1:state.running&&state.phase>=2&&state.phase<=5,upper:state.phase<3||state.phase>=6,lower:state.phase===4,s2:state.running&&state.phase===6&&state.part>.65,infeed:state.running&&state.phase===1||state.manual.infeed,outfeed:state.running&&state.phase===6||state.manual.outfeed,press:state.running&&(state.phase===3||state.phase===4)||state.manual.press}}
-function indicators(){const v=io();return [['S1 · Part',v.s1],['B1 · Upper',v.upper&&!state.manual.press],['B2 · Lower',v.lower||state.manual.press],['S2 · Exit',v.s2]].map(([l,on])=>`<span class="io ${on?'is-on':''}"><i class="dot ${on?'on':''}"></i>${l}</span>`).join('')}
-function schematic(){
-  const v=io();
-  const pressY=state.manual.press?28:state.phase===3?state.part*28:state.phase===4?28:state.phase===5?28*(1-state.part):0;
-  const x=state.phase===1?42+state.part*190:state.phase>=2&&state.phase<=5?232:state.phase===6?232+state.part*230:-40;
-  return `<svg viewBox="0 0 510 174" role="img" aria-label="Pneumatic press, infeed and outfeed conveyors with live sensor feedback">
-    <text x="25" y="17" class="svg-label">Infeed conveyor</text><text x="222" y="17" class="svg-label">Pneumatic press</text><text x="391" y="17" class="svg-label">Outfeed conveyor</text>
-    <path d="M201 133V30H305V133" class="tech"/>
-    <path d="M211 35H295" stroke="#8b93a1" stroke-width="4"/>
-    <path d="M216 40V127M290 40V127" stroke="#d3d6de" stroke-width="2"/>
-    <rect x="239" y="39" width="28" height="31" rx="3" class="tech"/>
-    <path d="M245 45h16" stroke="#c2c7d1" stroke-width="1.5"/>
-    <path d="M253 69V${87+pressY}" stroke="#939ba9" stroke-width="6"/><g transform="translate(0 ${pressY})"><rect x="225" y="84" width="56" height="9" rx="2" fill="#8993a3"/></g>
-    <rect x="213" y="134" width="80" height="7" rx="2" fill="#b0b7c3"/>
-    <rect x="14" y="135" width="189" height="17" rx="8.5" class="tech"/>
-    <rect x="307" y="135" width="189" height="17" rx="8.5" class="tech"/>
-    <path d="M36 153v11M183 153v11M326 153v11M476 153v11M203 142v22M303 142v22" stroke="#b2b8c4" stroke-width="2"/>
-    ${[30,63,96,129,162,188,323,356,389,422,455,480].map(cx=>`<circle cx="${cx}" cy="143.5" r="4" fill="none" stroke="#a9b1bf" stroke-width="1"/>`).join('')}
-    <path d="M78 115h54m-5-4 5 4-5 4" fill="none" stroke="${v.infeed?'#0053be':'#c7cbd3'}" stroke-width="1.5"/>
-    <path d="M375 115h54m-5-4 5 4-5 4" fill="none" stroke="${v.outfeed?'#0053be':'#c7cbd3'}" stroke-width="1.5"/>
-    ${state.running?`<rect x="${x}" y="121" width="35" height="12" rx="2" fill="#b9cdec" stroke="#0053be" stroke-width="1.2"/>`:''}
-    <circle cx="207" cy="119" r="4" class="sensor ${v.s1?'active':''}"/>
-    <circle cx="457" cy="119" r="4" class="sensor ${v.s2?'active':''}"/>
-    <circle cx="283" cy="61" r="3.5" class="sensor ${v.upper&&!state.manual.press?'active':''}"/>
-    <circle cx="283" cy="102" r="3.5" class="sensor ${v.lower||state.manual.press?'active':''}"/>
-    <text x="190" y="109" class="sensor-label">S1</text><text x="450" y="109" class="sensor-label">S2</text>
-    <text x="292" y="65" class="sensor-label">B1</text><text x="292" y="106" class="sensor-label">B2</text>
-    <text x="79" y="172" class="svg-label">${v.infeed?'Running':'Stopped'}</text><text x="376" y="172" class="svg-label">${v.outfeed?'Running':'Stopped'}</text>
+
+const state = {
+  page: 'overview', mode: 'Auto', running: false, phase: 0, elapsed: 0,
+  count: 0, lastCycle: 0, cycleElapsed: 0, recipe: 'Standard', dwell: 1,
+  access: 'Operator', fault: null, conditionRestored: false,
+  alarms: [], history: [], tab: 'active', part: 0,
+  manual: { infeed: false, outfeed: false, press: false },
+};
+const steps = ['Ready to run.', 'Infeed transfer', 'Part located at S1', 'Press descending', 'Press dwell', 'Press returning', 'Outfeed transfer'];
+const durations = [.4, 1.8, .5, .8, 1, .8, 1.8];
+const names = { overview: 'Overview', manual: 'Manual control', alarms: 'Alarms', settings: 'Diagnostics' };
+const $ = selector => document.querySelector(selector);
+let toastTimer;
+
+function timestamp() {
+  return new Date().toLocaleTimeString('en-GB', { timeZone: 'Europe/Berlin' });
+}
+
+function notify(message) {
+  $('#toast')?.remove();
+  const toast = document.createElement('div');
+  toast.id = 'toast';
+  toast.role = 'status';
+  toast.textContent = message;
+  $('#panel').append(toast);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.remove(), 2800);
+}
+
+function io() {
+  return {
+    s1: state.running && state.phase >= 2 && state.phase <= 5,
+    upper: (state.phase < 3 || state.phase >= 6) && !state.manual.press,
+    lower: state.phase === 4 || state.manual.press,
+    s2: state.running && state.phase === 6 && state.part > .65,
+    infeed: (state.running && state.phase === 1) || state.manual.infeed,
+    outfeed: (state.running && state.phase === 6) || state.manual.outfeed,
+    press: (state.running && (state.phase === 3 || state.phase === 4)) || state.manual.press,
+  };
+}
+
+function indicators() {
+  const value = io();
+  return [['S1 · Part', value.s1], ['B1 · Upper', value.upper], ['B2 · Lower', value.lower], ['S2 · Exit', value.s2]]
+    .map(([label, on]) => `<span class="io ${on ? 'is-on' : ''}"><i class="dot ${on ? 'on' : ''}"></i>${label}</span>`).join('');
+}
+
+function schematic() {
+  const value = io();
+  const travel = state.manual.press ? 36 : state.phase === 3 ? state.part * 36 : state.phase === 4 ? 36 : state.phase === 5 ? 36 * (1 - state.part) : 0;
+  const partX = state.phase === 1 ? 24 + state.part * 222 : state.phase >= 2 && state.phase <= 5 ? 246 : state.phase === 6 ? 246 + state.part * 235 : -40;
+  const sensor = (x, y, on, name) => `<rect x="${x - 4}" y="${y - 5}" width="8" height="10" rx="2" fill="${on ? '#0053be' : '#e4e9f1'}" stroke="${on ? '#0053be' : '#a6b2c3'}"/><text x="${x + 9}" y="${y + 4}" font-size="10" fill="#8994a5">${name}</text>`;
+  return `<svg class="machine-svg" viewBox="0 0 540 235" role="img" aria-label="Live pneumatic press, infeed and outfeed conveyors, sensors S1, S2, B1 and B2">
+    <defs>
+      <linearGradient id="metal" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#e5eaf1"/><stop offset=".32" stop-color="#fafcfe"/><stop offset="1" stop-color="#d9e0eb"/></linearGradient>
+      <linearGradient id="belt" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#edf1f6"/><stop offset="1" stop-color="#dce3ed"/></linearGradient>
+      <linearGradient id="cylinder" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#2f4f9a"/><stop offset=".5" stop-color="#3768bb"/><stop offset="1" stop-color="#26358b"/></linearGradient>
+    </defs>
+    <ellipse cx="277" cy="215" rx="230" ry="6" fill="#e4e8ef" opacity=".65"/>
+    <path d="M226 211V39a6 6 0 0 1 6-6h110a6 6 0 0 1 6 6v172" fill="url(#metal)" stroke="#aebacc" stroke-width="1.1"/>
+    <path d="M245 177V54h84v123" fill="#fafbfc" stroke="#c2ccd9"/>
+    <path d="M232 43h110M236 49v151M338 49v151" stroke="#fff" stroke-width="1.3"/>
+    <path d="M250 61v114M323 61v114" stroke="#d6dde7" stroke-width="3"/>
+    <rect x="269" y="51" width="35" height="43" rx="4" fill="url(#cylinder)"/>
+    <rect x="267" y="48" width="39" height="7" rx="2" fill="#bac8dd" stroke="#98abc5" stroke-width=".7"/>
+    <rect x="267" y="89" width="39" height="7" rx="2" fill="#c2cfe0" stroke="#98abc5" stroke-width=".7"/>
+    <path d="M276 59v22" stroke="#84a6da" stroke-width="1"/>
+    <path d="M286.5 96V${116 + travel}" stroke="#a7b6ca" stroke-width="7"/>
+    <path d="M285 96V${116 + travel}" stroke="#eef3fa" stroke-width="2"/>
+    <g transform="translate(0 ${travel})"><rect x="249" y="112" width="75" height="11" rx="2" fill="url(#metal)" stroke="#9cabc0"/><path d="M254 115h65" stroke="#fff"/></g>
+    <rect x="236" y="177" width="103" height="13" rx="2" fill="#c4cfdc" stroke="#aab9cb"/>
+    <path d="M243 183h88" stroke="#eef4fc"/>
+    <rect x="31" y="177" width="194" height="18" rx="9" fill="url(#belt)" stroke="#99a9bf" stroke-width="1.1"/>
+    <rect x="348" y="177" width="171" height="18" rx="9" fill="url(#belt)" stroke="#99a9bf" stroke-width="1.1"/>
+    <path d="M40 180h176M356 180h155" stroke="#fff" stroke-width="1.2"/>
+    ${[45, 72, 99, 126, 153, 180, 209, 362, 390, 418, 446, 474, 504].map(x => `<circle cx="${x}" cy="186" r="4.5" fill="#f5f8fc" stroke="#aab7ca" stroke-width=".8"/><circle cx="${x}" cy="186" r="1.2" fill="#b9c5d5"/>`).join('')}
+    <path d="M51 196v15h9v-15M201 196v15h9v-15M364 196v15h9v-15M491 196v15h9v-15" fill="#d7dfe9" stroke="#adbbcd" stroke-width=".8"/>
+    <rect x="36" y="193" width="183" height="2.5" rx="1.25" fill="${value.infeed ? '#0053be' : '#afbed1'}"/>
+    <rect x="353" y="193" width="160" height="2.5" rx="1.25" fill="${value.outfeed ? '#0053be' : '#afbed1'}"/>
+    <path d="M94 150h48m-5-4 5 4-5 4" stroke="${value.infeed ? '#0053be' : '#c4ccd8'}" stroke-width="1.3" fill="none"/>
+    <path d="M414 150h40m-5-4 5 4-5 4" stroke="${value.outfeed ? '#0053be' : '#c4ccd8'}" stroke-width="1.3" fill="none"/>
+    ${state.running ? `<rect x="${partX}" y="162" width="35" height="14" rx="2" fill="#a8c3ea" stroke="#477dbf" stroke-width="1"/><path d="M${partX + 3} 165h29" stroke="#dbe9fd"/>` : ''}
+    ${sensor(225, 157, value.s1, 'S1')}${sensor(476, 157, value.s2, 'S2')}
+    ${sensor(314, 81, value.upper, 'B1')}${sensor(314, 131, value.lower, 'B2')}
+    <circle cx="237" cy="42" r="2" fill="#a8b6c9"/><circle cx="337" cy="42" r="2" fill="#a8b6c9"/>
+    <text x="81" y="231" fill="#8a95a6" font-size="11">Infeed</text><text x="267" y="231" fill="#8a95a6" font-size="11">Press</text><text x="420" y="231" fill="#8a95a6" font-size="11">Outfeed</text>
   </svg>`;
 }
-function overview(){return `
-  <div class="title"><h1>Overview</h1><span class="recipe-pill">${state.recipe} recipe</span></div>
-  <div class="overview">
-    <section class="card drawing" aria-label="Live machine process">
-      <div class="canvas-heading"><strong>Press & conveyor</strong><span class="live-label">Live process</span></div>
-      ${schematic()}
-      <div class="sensor-strip">${indicators()}</div>
-    </section>
-    <aside class="card cycle-card">
-      <div class="cycle-heading"><span class="eyebrow">Cycle control</span><span class="step-number">${String(state.phase).padStart(2,'0')} / 06</span></div>
-      <div class="step">${state.fault?'Cycle interrupted':steps[state.phase]}</div>
-      <div class="progress" aria-label="Current cycle step ${state.phase}">${steps.map((_,i)=>`<i class="${i<=state.phase?'on':''}"></i>`).join('')}</div>
-      <div class="actions"><button class="primary" id="start" ${state.running||state.fault||state.mode!=='Auto'?'disabled':''}>Start</button><button class="stop" id="stop">Stop</button></div>
-      <div class="metrics"><div class="metric"><strong>${state.count}</strong><small>GOOD PARTS</small></div><div class="metric"><strong>${state.lastCycle.toFixed(1)}<span class="unit"> s</span></strong><small>LAST CYCLE</small></div></div>
-    </aside>
-  </div>
-  <p class="note overview-note">Simulation only · HMI Stop does not replace the physical emergency-stop circuit.</p>`}
-function manual(){const m=state.manual;return `<div class="title"><h1>Manual control</h1><button id="mode-toggle">${state.mode==='Auto'?'Enter manual mode':'Return to auto'}</button></div><div class="grid2"><section class="card"><h2>Conveyor jog · hold to run</h2>${['infeed','outfeed'].map(k=>`<div class="row"><label>${k==='infeed'?'Infeed':'Outfeed'} conveyor<br><span class="feedback">Command ${m[k]?'ON':'OFF'} / Feedback ${m[k]?'RUN':'STOP'}</span></label><button class="${m[k]?'holding':''}" data-hold="${k}" ${state.mode!=='Manual'||state.fault?'disabled':''}>Hold to jog →</button></div>`).join('')}</section><section class="card"><h2>Pneumatic press · hold to extend</h2><div class="row"><span class="feedback">Command ${m.press?'EXTEND':'RETRACT'}<br>Actual ${m.press?'LOWER':'UPPER'}</span><button class="${m.press?'holding':''}" data-hold="press" ${state.mode!=='Manual'||state.fault?'disabled':''}>Hold to extend ↓</button></div><p>Release to retract in the guarded simulation. Conveyors must be stopped; press must be upper before conveyor jogging.</p></section></div><div class="banner">${indicators()}<br>Interlocks: guard closed • safety circuit healthy • automatic cycle stopped. Manual mode only. No physical machine is connected.</div>`}
-function alarms(){const list=state.tab==='active'?state.alarms:state.history;return `<div class="title"><h1>Alarm management</h1><div class="tabs"><button data-tab="active" class="${state.tab==='active'?'chosen':''}">Active (${state.alarms.length})</button><button data-tab="history" class="${state.tab==='history'?'chosen':''}">History (${state.history.length})</button></div></div><div class="alarm-list">${list.length?list.map(a=>`<article class="alarm ${state.tab==='history'?'history':''}"><div><time>${a.time} · ${a.code} · ${a.severity}</time><strong>${a.message}</strong><p>${a.response}</p><span class="feedback">${a.component} · ${a.cleared?'Cleared':a.ack?'Acknowledged · condition active':'Unacknowledged'}</span></div>${!a.cleared?`<button data-ack="${a.id}" ${a.ack?'disabled':''}>${a.ack?'Acknowledged':'Acknowledge'}</button>`:''}</article>`).join(''):'<div class="card empty">✓ No active alarms<br><p>All monitored conditions are normal.</p></div>'}</div><p class="note">Acknowledgement records operator awareness. Clear the fault condition in developer diagnostics, then reset; restart is always deliberate.</p>`}
-function settings(){return `<div class="title"><h1>Settings & diagnostics</h1><select id="access" aria-label="Demo access level"><option ${state.access==='Operator'?'selected':''}>Operator</option><option ${state.access==='Engineer'?'selected':''}>Engineer</option></select></div><div class="grid2"><section class="card"><h2>Production recipe</h2><div class="row"><label for="recipe">Recipe</label><select id="recipe" ${state.running||state.access!=='Engineer'?'disabled':''}><option ${state.recipe==='Standard'?'selected':''}>Standard</option><option ${state.recipe==='Delicate'?'selected':''}>Delicate</option></select></div><div class="row"><label for="dwell">Press dwell / seconds</label><input id="dwell" type="number" min="0.5" max="3" step="0.1" value="${state.dwell}" ${state.running||state.access!=='Engineer'?'disabled':''}></div><p>Engineer access and stopped machine required. Demo role selector has no authentication.</p></section><section class="card"><h2>I/O monitor · live</h2>${indicators()}<p>Y1 · Press valve: ${io().press?'EXTEND':'RETRACT'}<br>M1 / M2 · Drives: ${io().infeed?'RUN':'STOP'} / ${io().outfeed?'RUN':'STOP'}<br>BE—070 · Pneumatic press / conveyor<br>Simulator v1.0 · No PLC connection</p></section></div><div class="fault-controls"><button id="fault-sensor">Dev: S1 timeout</button><button id="fault-guard">Dev: open guard</button><button id="clear-fault">Restore condition</button><button id="reset">Reset alarms</button></div><p class="note">Simulation only. Safety functions belong in the physical safety circuit.</p>`}
-function render(){const content={overview,manual,alarms,settings};$('#content').dataset.page=state.page;$('#content').innerHTML=content[state.page]();$('#status').textContent=state.fault?'FAULT · Motion inhibited':state.running?'RUNNING · Automatic cycle':state.mode==='Manual'?'MANUAL · Guarded simulation':'READY · Awaiting start';$('#status').classList.toggle('fault',!!state.fault);$('#mode').textContent=`${state.mode.toUpperCase()} MODE`;$('#alarm-link').textContent=state.alarms.length?`△ ${state.alarms.length} active alarm${state.alarms.length>1?'s':''}`:'✓ No active alarms';$('#alarm-link').classList.toggle('active',!!state.alarms.length);document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('selected',b.dataset.page===state.page));$('#clock').textContent=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
-function release(){Object.keys(state.manual).forEach(k=>state.manual[k]=false);render()}
-function stop(){state.running=false;state.phase=0;state.elapsed=0;state.part=0;Object.keys(state.manual).forEach(k=>state.manual[k]=false)}
-function fault(kind){stop();if(state.fault)return;state.conditionRestored=false;state.fault=kind;const a={id:Date.now(),time:new Date().toLocaleTimeString('en-GB'),code:kind==='guard'?'A101':'A201',severity:kind==='guard'?'HIGH':'MEDIUM',component:kind==='guard'?'Guard circuit':'Infeed / S1',message:kind==='guard'?'Guard permission lost':'Part arrival timeout',response:kind==='guard'?'Close the guard, verify the cell is clear, acknowledge and reset.':'Inspect the infeed and S1 detection, restore condition, acknowledge and reset.',ack:false,cleared:false};state.alarms.push(a);state.history.unshift(a);render()}
-document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;if(b.dataset.page){release();state.page=b.dataset.page;render();return}if(b.dataset.tab){state.tab=b.dataset.tab;render();return}if(b.dataset.ack){state.alarms.find(a=>a.id===Number(b.dataset.ack)).ack=true;render();return}switch(b.id){case 'start':if(!state.fault&&state.mode==='Auto'){state.running=true;state.phase=1;state.elapsed=0;state.cycleElapsed=0}break;case 'stop':stop();break;case 'mode-toggle':stop();state.mode=state.mode==='Auto'?'Manual':'Auto';break;case 'fault-sensor':fault('sensor');break;case 'fault-guard':fault('guard');break;case 'clear-fault':state.conditionRestored=true;notify('Simulated condition restored. Acknowledge and reset required.');break;case 'reset':if(!state.fault){notify('No fault to reset.');break}if(!state.conditionRestored||state.alarms.some(a=>!a.ack)){notify('Restore the condition and acknowledge all alarms first.');break}state.alarms.forEach(a=>a.cleared=true);state.alarms=[];state.fault=null;state.conditionRestored=false;notify('Reset complete. Machine stopped; select Start to resume.');break;}render()});
-document.addEventListener('change',e=>{const t=e.target;if(t.id==='access')state.access=t.value;if(t.id==='recipe'&&!state.running&&state.access==='Engineer'){state.recipe=t.value;state.dwell=t.value==='Delicate'?1.8:1}if(t.id==='dwell'&&!state.running&&state.access==='Engineer'){const n=Number(t.value);if(Number.isFinite(n)&&n>=.5&&n<=3)state.dwell=n;else notify('Dwell must be between 0.5 and 3 seconds.')}render()});
-document.addEventListener('pointerdown',e=>{const b=e.target.closest('[data-hold]');if(!b||b.disabled||state.mode!=='Manual'||state.fault)return;const k=b.dataset.hold;if(k==='press'&&(state.manual.infeed||state.manual.outfeed)||k!=='press'&&state.manual.press){notify('Interlock: stop the other actuator first.');return}state.manual[k]=true;b.setPointerCapture(e.pointerId);render()});document.addEventListener('pointerup',()=>{if(Object.values(state.manual).some(Boolean))release()});document.addEventListener('pointercancel',release);window.addEventListener('blur',release);document.addEventListener('visibilitychange',()=>{if(document.hidden){stop();render()}});
-let last=performance.now();setInterval(()=>{const now=performance.now(),dt=Math.min((now-last)/1000,.2);last=now;if(state.running&&!state.fault){state.elapsed+=dt;state.cycleElapsed+=dt;const duration=state.phase===4?state.dwell:durations[state.phase];state.part=Math.min(state.elapsed/duration,1);if(state.elapsed>=duration){state.phase++;state.elapsed=0;state.part=0;if(state.phase>6){state.count++;state.lastCycle=state.cycleElapsed;state.cycleElapsed=0;state.phase=1}}}if(state.page==='overview'||state.running)render()},100);render();
+
+function overview() {
+  return `<div class="intro"><div><span class="eyebrow">Pneumatic press</span><h1 id="process-heading"></h1></div><button class="recipe-pill" data-page="settings"><small>Active recipe</small><span id="recipe-name"></span></button></div>
+    <div class="visual-stage"><div id="process-art"></div><div class="metrics"><div class="metric"><strong id="good-count"></strong><small>GOOD PARTS</small></div><div class="metric"><strong><span id="cycle-time"></span><span class="unit">s</span></strong><small>LAST CYCLE</small></div></div></div>
+    <div class="sensor-strip"><div id="overview-io"></div><span class="step-counter" id="phase-number"></span></div>`;
+}
+
+function manual() {
+  return `<div class="title"><h1>Manual control</h1><button id="mode-toggle">${state.mode === 'Auto' ? 'Enter manual mode' : 'Return to auto'}</button></div>
+    <div class="grid2"><section class="card manual-card"><h2>Conveyor jog</h2>${['infeed', 'outfeed'].map(key => `<div class="row"><label>${key === 'infeed' ? 'Infeed' : 'Outfeed'} conveyor<br><span class="feedback" id="feedback-${key}"></span></label><button data-hold="${key}">Hold to jog →</button></div>`).join('')}</section>
+    <section class="card manual-card"><h2>Pneumatic press</h2><div class="row"><span class="feedback" id="feedback-press"></span><button data-hold="press">Hold to extend ↓</button></div><p>Hold to extend; release to retract in this guarded simulation. Conveyors must be stopped before extending the press.</p></section></div>
+    <div class="banner"><div id="manual-io"></div>Interlocks: guard closed · safety circuit healthy · automatic cycle stopped.<br>No physical machine is connected.</div>`;
+}
+
+function alarms() {
+  const list = state.tab === 'active' ? state.alarms : state.history;
+  return `<div class="title"><h1>Alarms</h1><div class="tabs"><button data-tab="active" class="${state.tab === 'active' ? 'chosen' : ''}">Active (${state.alarms.length})</button><button data-tab="history" class="${state.tab === 'history' ? 'chosen' : ''}">History (${state.history.length})</button></div></div>
+    <div class="alarm-list">${list.length ? list.map(alarm => `<article class="alarm ${state.tab === 'history' ? 'history' : ''}"><div><time>${alarm.time} · ${alarm.code} · ${alarm.severity}</time><strong>${alarm.message}</strong><p>${alarm.response}</p><span class="feedback">${alarm.component} · ${alarm.cleared ? 'Cleared' : alarm.ack ? 'Acknowledged · condition active' : 'Unacknowledged'}</span></div>${!alarm.cleared ? `<button data-ack="${alarm.id}" ${alarm.ack ? 'disabled' : ''}>${alarm.ack ? 'Acknowledged' : 'Acknowledge'}</button>` : ''}</article>`).join('') : '<div class="empty"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17"/><path d="m12 20 6 6 11-12"/></svg><strong>No active alarms</strong><p>All monitored conditions are normal.</p></div>'}</div>
+    <p class="note">Acknowledgement records awareness. Restore the condition, acknowledge and reset.<br>Reset never restarts the machine.</p>`;
+}
+
+function settings() {
+  return `<div class="title"><h1>Diagnostics</h1><select id="access" aria-label="Demo access level"><option ${state.access === 'Operator' ? 'selected' : ''}>Operator</option><option ${state.access === 'Engineer' ? 'selected' : ''}>Engineer</option></select></div>
+    <div class="grid2"><section class="card settings-card"><h2>Production recipe</h2><div class="row"><label for="recipe">Recipe</label><select id="recipe"><option ${state.recipe === 'Standard' ? 'selected' : ''}>Standard</option><option ${state.recipe === 'Delicate' ? 'selected' : ''}>Delicate</option></select></div><div class="row"><label for="dwell">Dwell / seconds</label><input id="dwell" type="number" min="0.5" max="3" step="0.1" value="${state.dwell}"></div><p>Engineer role and stopped machine required.<br>Demo roles have no authentication.</p></section>
+    <section class="card settings-card"><h2>Live I/O</h2><div id="diagnostic-io"></div><div class="diagnostic-row"><span>Y1 · Press valve</span><strong id="valve-feedback"></strong></div><div class="diagnostic-row"><span>M1 / M2 · Drives</span><strong id="drive-feedback"></strong></div><div class="diagnostic-row"><span>Connection</span><strong>Local simulator</strong></div></section></div>
+    <div class="fault-controls"><button id="fault-sensor">Dev: S1 timeout</button><button id="fault-guard">Dev: open guard</button><button id="clear-fault">Restore condition</button><button id="reset">Reset alarms</button></div>
+    <p class="note">Simulation only. Safety functions belong in the physical safety circuit.</p>`;
+}
+
+function render(refresh = false) {
+  const main = $('#content');
+  if (refresh || main.dataset.page !== state.page) {
+    main.dataset.page = state.page;
+    main.innerHTML = { overview, manual, alarms, settings }[state.page]();
+  }
+  const value = io();
+  if (state.page === 'overview') {
+    $('#process-heading').textContent = state.fault ? 'Cycle interrupted.' : steps[state.phase];
+    $('#recipe-name').textContent = state.recipe;
+    $('#process-art').innerHTML = schematic();
+    $('#good-count').textContent = state.count;
+    $('#cycle-time').textContent = state.lastCycle.toFixed(1);
+    $('#overview-io').innerHTML = indicators();
+    $('#phase-number').textContent = `Step ${String(state.phase).padStart(2, '0')} / 06`;
+  } else if (state.page === 'manual') {
+    for (const key of ['infeed', 'outfeed']) {
+      $(`#feedback-${key}`).textContent = `Command ${state.manual[key] ? 'ON' : 'OFF'} / Feedback ${state.manual[key] ? 'RUN' : 'STOP'}`;
+    }
+    $('#feedback-press').innerHTML = `Command ${state.manual.press ? 'EXTEND' : 'RETRACT'}<br>Actual ${state.manual.press ? 'LOWER' : 'UPPER'}`;
+    document.querySelectorAll('[data-hold]').forEach(button => {
+      button.disabled = state.mode !== 'Manual' || !!state.fault;
+      button.classList.toggle('holding', state.manual[button.dataset.hold]);
+      button.setAttribute('aria-pressed', String(state.manual[button.dataset.hold]));
+    });
+    $('#manual-io').innerHTML = indicators();
+  } else if (state.page === 'settings') {
+    $('#diagnostic-io').innerHTML = indicators();
+    $('#valve-feedback').textContent = value.press ? 'EXTEND' : 'RETRACT';
+    $('#drive-feedback').textContent = `${value.infeed ? 'RUN' : 'STOP'} / ${value.outfeed ? 'RUN' : 'STOP'}`;
+    $('#recipe').disabled = $('#dwell').disabled = state.running || state.access !== 'Engineer';
+  }
+  $('#start').disabled = state.running || !!state.fault || state.mode !== 'Auto';
+  const status = state.fault ? 'FAULT · Motion inhibited' : state.running ? 'RUNNING' : state.mode === 'Manual' ? 'MANUAL' : 'READY';
+  // Announce state changes once; do not repeat the live region every timer tick.
+  if ($('#status').textContent !== status) $('#status').textContent = status;
+  $('#status').classList.toggle('fault', !!state.fault);
+  $('#mode').textContent = `${state.mode === 'Auto' ? 'Automatic' : 'Manual'} mode`;
+  const alarmCount = state.alarms.length;
+  if ($('#alarm-link').dataset.count !== String(alarmCount)) {
+    $('#alarm-link').dataset.count = alarmCount;
+    $('#alarm-link').innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true">${alarmCount ? '<path d="m10 2 9 16H1Z M10 7v5m0 2v1"/>' : '<circle cx="10" cy="10" r="7"/><path d="m6 10 3 3 5-6"/>'}</svg><span>${alarmCount ? `${alarmCount} alarm${alarmCount > 1 ? 's' : ''}` : 'All clear'}</span>`;
+  }
+  $('#alarm-link').classList.toggle('active', !!alarmCount);
+  $('#nav-alarm-dot').hidden = !alarmCount;
+  $('#screen-name').textContent = names[state.page];
+  document.querySelectorAll('nav button').forEach(button => {
+    const selected = button.dataset.page === state.page;
+    button.classList.toggle('selected', selected);
+    if (selected) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  $('#clock').textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' });
+}
+
+function release() {
+  Object.keys(state.manual).forEach(key => { state.manual[key] = false; });
+  render();
+}
+
+function stop() {
+  state.running = false;
+  state.phase = 0;
+  state.elapsed = 0;
+  state.part = 0;
+  Object.keys(state.manual).forEach(key => { state.manual[key] = false; });
+}
+
+function fault(kind) {
+  stop();
+  if (state.fault) return;
+  state.conditionRestored = false;
+  state.fault = kind;
+  const alarm = {
+    id: Date.now(), time: timestamp(), code: kind === 'guard' ? 'A101' : 'A201',
+    severity: kind === 'guard' ? 'HIGH' : 'MEDIUM', component: kind === 'guard' ? 'Guard circuit' : 'Infeed / S1',
+    message: kind === 'guard' ? 'Guard permission lost' : 'Part arrival timeout',
+    response: kind === 'guard' ? 'Close the guard, verify the cell is clear, acknowledge and reset.' : 'Inspect the infeed and S1 detection, restore condition, acknowledge and reset.',
+    ack: false, cleared: false,
+  };
+  state.alarms.push(alarm);
+  state.history.unshift(alarm);
+}
+
+function hold(key) {
+  if (state.mode !== 'Manual' || state.fault) return false;
+  if ((key === 'press' && (state.manual.infeed || state.manual.outfeed)) || (key !== 'press' && state.manual.press)) {
+    notify('Interlock: stop the other actuator first.');
+    return false;
+  }
+  state.manual[key] = true;
+  render();
+  return true;
+}
+
+// Commands are simulation requests; no physical I/O or safety outputs are connected.
+document.addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button || button.disabled || button.dataset.hold) return;
+  if (button.dataset.page) {
+    release();
+    state.page = button.dataset.page;
+  } else if (button.dataset.tab) {
+    state.tab = button.dataset.tab;
+  } else if (button.dataset.ack) {
+    state.alarms.find(alarm => alarm.id === Number(button.dataset.ack)).ack = true;
+  } else {
+    switch (button.id) {
+      case 'start':
+        if (!state.fault && state.mode === 'Auto') {
+          state.running = true;
+          state.phase = 1;
+          state.elapsed = state.part = state.cycleElapsed = 0;
+        }
+        break;
+      case 'stop': stop(); break;
+      case 'mode-toggle':
+        stop();
+        state.mode = state.mode === 'Auto' ? 'Manual' : 'Auto';
+        break;
+      case 'fault-sensor': fault('sensor'); break;
+      case 'fault-guard': fault('guard'); break;
+      case 'clear-fault':
+        state.conditionRestored = true;
+        notify('Simulated condition restored. Acknowledge and reset required.');
+        break;
+      case 'reset':
+        if (!state.fault) notify('No fault to reset.');
+        else if (!state.conditionRestored || state.alarms.some(alarm => !alarm.ack)) notify('Restore the condition and acknowledge all alarms first.');
+        else {
+          state.alarms.forEach(alarm => { alarm.cleared = true; });
+          state.alarms = [];
+          state.fault = null;
+          state.conditionRestored = false;
+          notify('Reset complete. Machine stopped; select Start to resume.');
+        }
+        break;
+    }
+  }
+  render(true);
+});
+
+document.addEventListener('change', event => {
+  const field = event.target;
+  if (field.id === 'access') state.access = field.value;
+  if (field.id === 'recipe' && !state.running && state.access === 'Engineer') {
+    state.recipe = field.value;
+    state.dwell = field.value === 'Delicate' ? 1.8 : 1;
+  }
+  if (field.id === 'dwell' && !state.running && state.access === 'Engineer') {
+    const dwell = Number(field.value);
+    if (Number.isFinite(dwell) && dwell >= .5 && dwell <= 3) state.dwell = dwell;
+    else notify('Dwell must be between 0.5 and 3 seconds.');
+  }
+  render(true);
+});
+
+document.addEventListener('pointerdown', event => {
+  const button = event.target.closest('[data-hold]');
+  if (!button || button.disabled) return;
+  if (hold(button.dataset.hold)) button.setPointerCapture(event.pointerId);
+});
+document.addEventListener('pointerup', () => {
+  if (Object.values(state.manual).some(Boolean)) release();
+});
+document.addEventListener('pointercancel', release);
+document.addEventListener('keydown', event => {
+  const button = event.target.closest('[data-hold]');
+  if (button && !button.disabled && [' ', 'Enter'].includes(event.key)) {
+    event.preventDefault();
+    if (!event.repeat) hold(button.dataset.hold);
+  }
+});
+document.addEventListener('keyup', event => {
+  if ([' ', 'Enter'].includes(event.key) && Object.values(state.manual).some(Boolean)) release();
+});
+document.addEventListener('focusout', event => {
+  if (event.target.matches('[data-hold]') && state.manual[event.target.dataset.hold]) release();
+});
+window.addEventListener('blur', release);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { stop(); render(); }
+});
+
+let previousTime = performance.now();
+setInterval(() => {
+  const now = performance.now();
+  const delta = Math.min((now - previousTime) / 1000, .2);
+  previousTime = now;
+  if (state.running && !state.fault) {
+    state.elapsed += delta;
+    state.cycleElapsed += delta;
+    const duration = state.phase === 4 ? state.dwell : durations[state.phase];
+    state.part = Math.min(state.elapsed / duration, 1);
+    if (state.elapsed >= duration) {
+      state.phase++;
+      state.elapsed = state.part = 0;
+      if (state.phase > 6) {
+        state.count++;
+        state.lastCycle = state.cycleElapsed;
+        state.cycleElapsed = 0;
+        state.phase = 1;
+      }
+    }
+  }
+  render();
+}, 100);
+render(true);

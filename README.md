@@ -2,13 +2,13 @@
 
 ![BONUS ENGINEERING HMI overview](tests/artifacts/overview.png)
 
-A clean, Apple-inspired interface with original BONUS branding: rounded surfaces, precise Inter typography, generous spacing and clear touch controls.
+A rebuilt machine-control workspace with original BONUS branding: persistent sidebar navigation, a large live machine illustration, clear operating-state typography, and a fixed Start/Stop command dock.
 
 ## Try it
 
 1. Click **Code → Download ZIP** on this branch.
 2. Extract the ZIP and open **index.html** in your browser.
-3. Press **Start** to run the simulation. Use the bottom buttons to explore the other screens.
+3. Press **Start** to run the simulation. Use the left sidebar to explore the other screens.
 
 GitHub displays the source files; it does not run the interactive HMI on the repository page.
 
@@ -37,9 +37,10 @@ The development environment has Playwright and Chromium available. Run:
 
 ```sh
 node tests/smoke.cjs
+node tests/capture.cjs
 ```
 
-Start the HTTP server first. The test uses installed `playwright` and `/usr/bin/chromium`; on another machine supply those as development tools (not runtime dependencies). Tests exercise a full automatic cycle, manual hold/release, recipes, both faults, alarm lifecycle, navigation, screen dimensions and clipping. Screenshots are saved under `tests/artifacts/`.
+Start the HTTP server first. The smoke test and screenshot capture use installed `playwright` and `/usr/bin/chromium`; on another machine supply those as development tools (not runtime dependencies). Tests exercise a full automatic cycle, manual hold/release, recipes, both faults, alarm lifecycle, navigation, screen dimensions and clipping. Screenshots are saved under `tests/artifacts/`. `capture.cjs` also verifies that the interface makes no external network requests.
 
 ## Deliverables
 

@@ -1,53 +1,73 @@
-# Component and token library
+# BONUS HMI design system
 
-The interface pairs BONUS ENGINEERING branding with Apple-inspired clarity: generous grouping, quiet neutral surfaces, rounded controls and a strong type hierarchy. It uses locally hosted Inter and project SVG icons, with no Apple proprietary fonts or icon assets. All components are ordinary DOM elements using `styles.css`; no UI framework or external runtime assets are required. There are no glass-blur effects, gradients or decorative animations.
+This revision uses an application layout: a quiet navigation sidebar, one open machine workspace and a fixed command dock. The operating state is the primary heading. The machine drawing, actual sensor states and immediate commands carry the overview; there is no dashboard of competing cards.
 
-The original logo, blue accent, primary ink, white surfaces and Inter typography come from the company website. Muted text, separators, selected surfaces, layout sizes and alarm colors are industrial adaptations; they are not claimed as exact source brand values. See `branding-research.md` for the verified source values.
+The original BONUS ENGINEERING wordmark is displayed at 158px wide in the header, and the actual company icon appears at 32px at the top of the sidebar. Both are local assets, displayed without redrawing or changing proportions. Inter is hosted locally with its OFL license. Project SVG navigation icons are ordinary vector paths; no Apple proprietary font or icon assets are bundled. The visual direction draws on Apple's hierarchy, precise alignment and restrained material cues rather than reproducing an Apple product.
 
-| Token | Current value | Purpose |
+## Tokens
+
+| Token | Value | Role |
 |---|---|---|
-| `--bg` | `#f5f5f7` | Quiet screen field |
-| `--surface` | `#ffffff` | Grouped information surfaces |
-| `--ink` | `#1d1d1f` | Primary text; verified brand value |
-| `--muted` | `#63636b` | Adapted secondary text |
-| `--line` | `#e3e3e8` | Adapted quiet separators |
-| `--accent` | `#0053be` | Verified brand blue; primary command and active state |
-| `--active` | `#eaf1fc` | Adapted pale-blue selected surface |
-| `--alarm` | `#b5372f` | Abnormal state / stop |
+| `--bg` | `#fafbfc` | Open workspace field |
+| `--surface` | `#ffffff` | Command dock and grouped controls |
+| `--sidebar` | `#f0f1f4` | Navigation and machine identity |
+| `--ink` | `#202126` | Adapted primary text |
+| `--muted` | `#686c77` | Adapted secondary text |
+| `--line` | `#e4e6eb` | Quiet boundaries |
+| `--accent` | `#0053be` | Verified BONUS blue; primary command and active feedback |
+| `--active` | `#eaf1fc` | Selected-state surface reserve |
+| `--alarm` | `#bb342f` | Abnormal condition |
 | `--warning` | `#946311` | Warning reserve |
-| `--radius` | `16px` | Grouped card corners |
-| `--control-radius` | `12px` | Button and navigation corners |
+| `--radius` | `14px` | Grouped diagnostic/manual surfaces |
 | `--space` | `8px` | Base spacing unit |
 
-Typography: locally hosted Inter variable font / Arial / Helvetica / sans-serif; 22px screen and cycle headings, 25px tabular process metrics, 14px command buttons, 12–13px descriptive text, and 10–11px secondary labels. Tight heading tracking and restrained weights establish hierarchy without making every label bold. Secondary labels require physical-panel readability review at the intended viewing distance.
+The corporate wordmark, icon, blue and Inter family come from the company source. Workspace neutrals, typography sizes and functional alarm colors are HMI adaptations, not claims about exact website CSS. See `branding-research.md` for the original source values.
 
-Buttons, navigation, alarm tabs, recipe selectors and dwell fields have 44px minimum height. Validate all targets with the intended gloves and viewing conditions on the physical panel.
+## Fixed layout
 
-## Reusable patterns
+The panel is exactly **800 × 480px**, without scrolling on the main operator screens.
 
-- `.card`: white grouped surface, fine boundary, 16px corners and 14px default inset.
-- `.title`: 22px title with a contextual selection or action.
-- `.recipe-pill`: quiet contextual recipe label, distinct from an action.
-- `.drawing`: calm machine canvas with a heading, live-state label and integrated `.sensor-strip` along the bottom.
-- `.io` + `.dot.on`: named binary state; active sensor chips pair blue fill with an explicit label and fixed location.
-- `.cycle-card`: operating step, discrete progress, Start/Stop and completion metrics in one compact group.
-- `.primary`: one deliberate solid-blue machine-start action.
-- `.stop`: red text on a restrained pale-red surface; physical emergency stop remains separate.
-- `.holding`: clear blue feedback for an actively held manual control.
-- `.metric`: tabular value, units and explicit label; no decorative gauge.
-- `.tabs`: gray segmented container with a white selected segment.
-- `.alarm`: severity/code/time, condition, component, operator response and acknowledgement state; abnormal state retains a red edge and text context.
-- `.banner`, `.note`: operational context and limitations.
-- `nav button.selected`: pale-blue rounded selection capsule with a consistent line icon and text label.
-- `.progress`: discrete cycle-stage bars paired with a plain-language step.
-- `schematic()` in `app.js`: parameterized SVG driven by `io()` and machine state. Preserve its `viewBox` and intentional strokes when porting.
+- Sidebar: 128px wide, full height. The original company icon appears above a quiet Workspace label and four labeled navigation rows; machine identity and the Simulation label sit below.
+- Workspace: 672px wide.
+- Header: 52px high, with the original full wordmark, location, selected screen, machine status, alarm shortcut and time.
+- Main: 356px high, from y=52 to y=408; inset 24px horizontally and 18px vertically.
+- Command dock: 72px high, from y=408 to y=480. Mode and safety context stay left; Stop and Start cycle stay right on every screen.
 
-## Layout contract
+The overview has a 61px introduction, a 218px visual stage and a 38px sensor strip. Its technical illustration is unboxed. Good parts and last cycle form one quiet vertical pair at the right, separated from the process by a fine line. Active recipe is a functional shortcut to Diagnostics.
 
-800 × 480; header 66px, status rail 38px, main 316px, bottom navigation 60px. Main inset is 20px horizontally and 14px vertically. The overview assigns 516px to the process column and 232px to the cycle column, with a 12px gap. Its 228px machine canvas includes the sensor strip, aligning with the 228px cycle card. Persistent machine state and the alarm shortcut remain visible across screens. No main-screen scrolling is required; alarm lists alone may scroll as history grows.
+## Typography and touch
 
-Use text, position and state together; never color alone. Reserve red for abnormal/stop functions, keep stationary equipment neutral, and avoid flashing or decorative movement. The part and press position reflect the simulated process. This follows high-performance HMI design intent; it is not an ISA-101 compliance certification.
+Use local Inter, with installed system sans-serif fallbacks. The process-state heading is 31px; other screen titles are 27px. Process metrics are 31px with tabular numerals. Group titles use 12–14px; navigation labels use 12px, and command buttons and ordinary field labels use 11–12px. Secondary identification, units and diagnostic metadata use 9–10px sparingly. These small labels require physical-panel review at the real viewing distance; they should never carry the sole indication of a fault or required action.
 
-## Acceptance review
+Touch controls have a 44px minimum height. Sidebar rows are 48px; persistent command buttons are 46px. Selected navigation uses a white surface and brand-blue icon/text. Focus uses a visible blue outline. Do not remove focus indication to make screenshots cleaner.
 
-Inspect actual captures at native resolution, then review on the physical panel under plant lighting with the intended gloves and viewing distance. Validate touch targets, contrast, alarm prioritization and operator vocabulary with operators. The original logo is displayed at its intrinsic aspect ratio without redrawing or cropping. Rounded styling must preserve visible alarms, explicit actuator feedback and deliberate command behavior.
+## Components
+
+| Pattern | Behavior and appearance |
+|---|---|
+| `.sidebar`, `nav button.selected` | Stable navigation, consistent SVG icon and explicit label, quiet white selected row |
+| `.intro`, `#process-heading` | Machine type above the dominant plain-language operating state |
+| `.recipe-pill` | Current recipe and shortcut to Diagnostics; behaves as a button |
+| `#process-art`, `.machine-svg` | Lightweight technical SVG, reflecting actual simulator state |
+| `.metrics`, `.metric` | Count and last completed cycle, with explicit labels and units |
+| `.sensor-strip`, `.io` | Fixed sensor identity and binary state; active blue dot pairs with the text label |
+| `.dock-info`, `.actions` | Persistent mode, process-stop context, Stop and deliberate Start cycle |
+| `.card`, `.manual-card` | Grouped actuator controls with command/actual feedback and hold-state feedback |
+| `.settings-card`, `.diagnostic-row` | Aligned recipe fields, live I/O and component feedback |
+| `.tabs`, `.alarm` | Active/history selection, severity, time, component, response and acknowledgement |
+| `.banner`, `.note` | Concise interlock and simulation context |
+| `#toast` | Temporary feedback above the command dock; never substitutes for a persistent alarm |
+
+The machine SVG uses subtle metal, belt and cylinder gradients to distinguish material surfaces and an understated floor ellipse to ground its geometry. These are local vector fills, not an image or heavy renderer. Machine movement is driven by the process state; there are no decorative entrance animations or glass-blur effects. Surface shadows, where present, are minimal and distinguish selected or actionable controls.
+
+## Runtime behavior
+
+The app creates a screen when navigation changes and updates live content in place. It does not replace focused fields, manual hold buttons or persistent footer commands on every simulation tick. Diagnostics retains focus while the cycle runs. Changes that affect an alarm list explicitly refresh that list, while live values use targeted updates.
+
+The PLC simulation owns state, feedback and interlocks. The appearance must not imply that a disabled command has been accepted. Start, Stop, acknowledgement, condition restoration and reset remain separate operations. Acknowledgement never clears an active condition; reset never starts motion. Physical emergency stop and safety functions remain outside ordinary HMI logic.
+
+## Visual and operator acceptance
+
+Inspect actual screenshots at 800 × 480 and 100% zoom. Check the longest operating-state heading, alarm text, diagnostic values and enabled/disabled combinations. The intended checks include a complete automatic cycle, navigation, hold/release, conflicting-command interlocks, recipes, both simulated faults, acknowledgement/reset, command persistence and field focus during live updates.
+
+Review the actual panel under plant lighting with intended gloves and viewing distance. Confirm secondary-label legibility, target size, contrast, alarm priority and vocabulary with operators. This design follows high-performance HMI intent; it is not an ISA-101 or machine-safety certification.
